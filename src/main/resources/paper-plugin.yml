@@ -1,0 +1,9 @@
+name: EssentialUtils
+description: A collection of essential utilities for your Minecraft server.
+authors: [ "@PPekKunGzDev" ]
+website: https://ppekkungz.in.th
+main: net.ppekkungz.essentialUtils.EssentialUtils
+version: ${version}
+api-version: '1.21'
+folia-supported: true
+load: POSTWORLD
