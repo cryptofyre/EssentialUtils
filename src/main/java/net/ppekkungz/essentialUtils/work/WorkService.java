@@ -3,41 +3,46 @@ package net.ppekkungz.essentialUtils.work;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.ppekkungz.essentialUtils.EssentialUtils;
 import net.ppekkungz.essentialUtils.config.PluginConfig;
-import net.ppekkungz.essentialUtils.indicator.ActionBarIndicator;
-import net.ppekkungz.essentialUtils.indicator.IndicatorService;
+import net.ppekkungz.essentialUtils.features.farm.AutoFarmFeature;
+import net.ppekkungz.essentialUtils.indicator.ActionBarService;
 import net.ppekkungz.essentialUtils.state.PlayerState;
 import net.ppekkungz.essentialUtils.state.StateManager;
-import net.ppekkungz.essentialUtils.util.HarvestUtil;
+import net.ppekkungz.essentialUtils.util.FortuneUtil;
+import net.ppekkungz.essentialUtils.util.LeafDropUtil;
 import net.ppekkungz.essentialUtils.util.Protection;
+import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Particle;
 import org.bukkit.block.Block;
+import org.bukkit.entity.ExperienceOrb;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.Damageable;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Folia-safe work processing service.
+ * Handles block breaking, item drops, XP spawning, and replanting.
+ */
 public class WorkService {
     private final EssentialUtils plugin;
     private final PluginConfig cfg;
     private final StateManager states;
-    private final IndicatorService indicator = new ActionBarIndicator();
+    private final ActionBarService actionBar;
 
     private final Map<UUID, WorkQueue> queues = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledTask> loops = new ConcurrentHashMap<>();
 
-    // durability throttle counters
-    private final Map<UUID, Integer> treeBroken = new ConcurrentHashMap<>();
-    private final Map<UUID, Integer> veinBroken = new ConcurrentHashMap<>();
-
-    // rate-limit for tier alerts
-    private final Map<UUID, Long> lastTierWarn = new ConcurrentHashMap<>();
-
-    public WorkService(EssentialUtils plugin, PluginConfig cfg, StateManager states) {
-        this.plugin = plugin; this.cfg = cfg; this.states = states;
+    public WorkService(EssentialUtils plugin, PluginConfig cfg, StateManager states, ActionBarService actionBar) {
+        this.plugin = plugin;
+        this.cfg = cfg;
+        this.states = states;
+        this.actionBar = actionBar;
     }
 
     public WorkQueue queue(Player p) {
@@ -54,179 +59,423 @@ public class WorkService {
         ScheduledTask t = loops.remove(p.getUniqueId());
         if (t != null) t.cancel();
         queues.remove(p.getUniqueId());
-        treeBroken.remove(p.getUniqueId());
-        veinBroken.remove(p.getUniqueId());
-        lastTierWarn.remove(p.getUniqueId());
     }
 
     public void shutdown() {
         loops.values().forEach(ScheduledTask::cancel);
         loops.clear();
         queues.clear();
-        treeBroken.clear();
-        veinBroken.clear();
-        lastTierWarn.clear();
-    }
-
-    private int capFor(WorkItem.FeatureTag tag) {
-        return switch (tag) {
-            case TREE -> cfg.treeMaxPerTick();
-            case VEIN -> cfg.veinMaxPerTick();
-            case FARM -> cfg.farmMaxPerTick();
-            default -> Integer.MAX_VALUE;
-        };
     }
 
     private void tickPlayer(Player p) {
-        if (!p.isOnline()) { stopLoop(p); return; }
+        if (!p.isOnline()) {
+            stopLoop(p);
+            return;
+        }
+        
         WorkQueue q = queue(p);
         if (q.isEmpty()) {
             if (states.get(p) == PlayerState.ACTIVE) {
-                indicator.show(p, "§7[EssentialUtils] §fQueue empty. §cIdle");
-                states.set(p, PlayerState.IDLE);
+                // Processing complete - show summaries and cleanup
+                finishProcessing(p);
             }
             return;
         }
 
-        final int perPlayerBudget = cfg.perPlayerBudget();
+        final int budget = cfg.blocksPerTick();
         EnumMap<WorkItem.FeatureTag, Integer> used = new EnumMap<>(WorkItem.FeatureTag.class);
-        for (WorkItem.FeatureTag t : WorkItem.FeatureTag.values()) used.put(t, 0);
+        for (WorkItem.FeatureTag t : WorkItem.FeatureTag.values()) {
+            used.put(t, 0);
+        }
 
         int processed = 0;
         int guard = Math.max(64, q.size() * 2);
 
-        for (int i = 0; i < guard && processed < perPlayerBudget; i++) {
+        for (int i = 0; i < guard && processed < budget; i++) {
             WorkItem wi = q.poll();
             if (wi == null) break;
 
-            // cooldown
+            // Handle cooldown
             if (wi.cooldownTicks > 0) {
                 wi.cooldownTicks--;
                 q.add(wi);
                 continue;
             }
 
-            // per-feature cap
-            int usedSoFar = used.getOrDefault(wi.tag, 0);
-            if (usedSoFar >= capFor(wi.tag)) {
-                q.add(wi);
-                continue;
-            }
-
             Block b = wi.block;
+            
+            // Chunk check
             if (cfg.requireChunkLoaded() && !b.getChunk().isLoaded()) {
-                wi.cooldownTicks = Math.max(1, cfg.treeReplantRetryCooldownTicks()); // reuse knob
+                wi.cooldownTicks = 5;
                 q.add(wi);
                 continue;
             }
+            
+            // Protection check
             if (!Protection.canModify(wi.player, b)) {
-                continue; // drop silently if protected
+                continue;
             }
 
+            // Process the work item
             switch (wi.action) {
-                case BREAK -> {
-                    if (!b.getType().isAir()) breakControlled(wi);
-                }
-                case PLANT -> {
-                    if (cfg.treeReplantEnabled()) handlePlant(wi, q);
-                }
+                case BREAK -> handleBreak(wi);
+                case PLANT -> handlePlant(wi, q);
+                case REPLANT -> handleReplant(wi, q);
             }
 
-            used.put(wi.tag, usedSoFar + 1);
+            used.put(wi.tag, used.getOrDefault(wi.tag, 0) + 1);
             processed++;
         }
-
-        if (cfg.showProgress()) {
-            indicator.show(p, "§a[EU] §fTick: §e" + processed + "§7/§b" + perPlayerBudget + " §7| Q: §b" + q.size());
-        }
     }
 
-    private void breakControlled(WorkItem wi) {
-        Player p = wi.player;
+    /**
+     * Handle block breaking based on feature type.
+     */
+    private void handleBreak(WorkItem wi) {
         Block b = wi.block;
-
-        // TREE/FARM: break with drops; custom durability per N
-        if (wi.tag == WorkItem.FeatureTag.TREE || wi.tag == WorkItem.FeatureTag.FARM) {
-            b.breakNaturally(p.getInventory().getItemInMainHand(), true);
-            if (wi.tag == WorkItem.FeatureTag.TREE) damageToolEveryN(p, wi.tag);
-            return;
-        }
-
-        // VEIN: enforce pickaxe tier; if under-tier -> alert & don't break
-        if (wi.tag == WorkItem.FeatureTag.VEIN) {
-            int tier = HarvestUtil.pickaxeTier(p.getInventory().getItemInMainHand());
-            int need = HarvestUtil.requiredTierForOre(b.getType());
-
-            if (tier >= need) {
-                b.breakNaturally(p.getInventory().getItemInMainHand(), true);
-                damageToolEveryN(p, wi.tag);
-                return;
-            }
-
-            // under-tier: alert (rate-limited), do NOT break or damage
-            if (plugin.getConfig().getBoolean("features.veinMine.alertOnInsufficientTier", true)) {
-                long now = System.currentTimeMillis();
-                long last = lastTierWarn.getOrDefault(p.getUniqueId(), 0L);
-                if (now - last >= 1000L) {
-                    p.sendActionBar("§c[EssentialUtils] Can't mine " + b.getType() +
-                            " with your pickaxe. Requires §e" + HarvestUtil.tierName(need) + "§c.");
-                    lastTierWarn.put(p.getUniqueId(), now);
-                }
-            }
+        Player p = wi.player;
+        
+        if (b.getType().isAir()) return;
+        
+        switch (wi.tag) {
+            case TREE -> handleTreeBreak(wi);
+            case VEIN -> handleVeinBreak(wi);
+            case FARM -> handleFarmBreak(wi);
+            default -> b.breakNaturally(p.getInventory().getItemInMainHand(), true);
         }
     }
 
-    private void damageToolEveryN(Player p, WorkItem.FeatureTag tag) {
-        int step = switch (tag) {
-            case TREE -> plugin.getConfig().getInt("features.treeAssist.durabilityPerNBlocks", 8);
-            case VEIN -> plugin.getConfig().getInt("features.veinMine.durabilityPerNBlocks", 10);
-            default -> 0;
-        };
-        if (step <= 0) return;
+    /**
+     * Handle tree block breaking (logs and leaves).
+     */
+    private void handleTreeBreak(WorkItem wi) {
+        Block b = wi.block;
+        Player p = wi.player;
+        
+        LeafDropUtil.TreeFellerResult result = states.getTreeFellerResult(p);
+        
+        if (wi.isLeaf) {
+            // Get tree type for drop calculations
+            Material logType = states.getTreeFellerLogType(p);
+            LeafDropUtil.TreeType treeType = logType != null 
+                ? LeafDropUtil.getTreeTypeFromLog(logType) 
+                : LeafDropUtil.TreeType.OAK;
+            
+            // Calculate drops instead of using breakNaturally
+            if (result != null) {
+                result.addLeafDrops(treeType);
+            }
+            
+            // Break the leaf silently (drops calculated above)
+            // Note: Leaves don't damage axes in vanilla Minecraft
+            b.setType(Material.AIR);
+        } else {
+            // Log - break naturally and damage tool
+            b.breakNaturally(p.getInventory().getItemInMainHand(), true);
+            if (result != null) {
+                result.addLog();
+            }
+            // breakNaturally doesn't damage the tool, we need to do it manually
+            damageToolSlightly(p);
+        }
+    }
 
-        Map<UUID, Integer> map = (tag == WorkItem.FeatureTag.TREE) ? treeBroken : veinBroken;
-        int count = map.getOrDefault(p.getUniqueId(), 0) + 1;
-        if (count >= step) {
-            map.put(p.getUniqueId(), 0);
-            ItemStack hand = p.getInventory().getItemInMainHand();
-            if (hand != null && hand.getItemMeta() instanceof Damageable dmg) {
-                dmg.setDamage(dmg.getDamage() + 1);
-                hand.setItemMeta(dmg);
+    /**
+     * Handle ore breaking with Fortune/Silk Touch.
+     */
+    private void handleVeinBreak(WorkItem wi) {
+        Block b = wi.block;
+        Player p = wi.player;
+        ItemStack tool = p.getInventory().getItemInMainHand();
+        Material oreType = b.getType();
+        
+        VeinMineResult result = states.getVeinMineResult(p);
+        
+        boolean silkTouch = FortuneUtil.hasSilkTouch(tool);
+        int fortuneLevel = FortuneUtil.getFortuneLevel(tool);
+        
+        if (silkTouch && cfg.veinMinerSilkTouchDropsOre()) {
+            // Silk Touch: drop the ore block itself
+            b.setType(Material.AIR);
+            b.getWorld().dropItemNaturally(b.getLocation().add(0.5, 0.5, 0.5), new ItemStack(oreType, 1));
+            
+            if (result != null) {
+                result.addMinedBlock();
+                result.addDrops(oreType, 1);
+                result.setSilkTouch(true);
             }
         } else {
-            map.put(p.getUniqueId(), count);
+            // Fortune or normal: calculate drops
+            Material dropType = FortuneUtil.getOreDrop(oreType);
+            int dropCount = cfg.veinMinerFortuneEnabled() 
+                ? FortuneUtil.calculateDropCount(oreType, fortuneLevel)
+                : 1;
+            int xp = FortuneUtil.getOreXP(oreType);
+            
+            // Break block and drop items
+            b.setType(Material.AIR);
+            if (dropCount > 0) {
+                b.getWorld().dropItemNaturally(b.getLocation().add(0.5, 0.5, 0.5), new ItemStack(dropType, dropCount));
+            }
+            
+            if (result != null) {
+                result.addMinedBlock();
+                result.addDrops(dropType, dropCount);
+                result.addXP(xp);
+                result.setFortuneLevel(fortuneLevel);
+            }
+        }
+        
+        // Damage tool
+        damageToolSlightly(p);
+    }
+
+    /**
+     * Handle crop breaking with auto-replant.
+     */
+    private void handleFarmBreak(WorkItem wi) {
+        Block b = wi.block;
+        Player p = wi.player;
+        Material cropType = b.getType();
+        
+        // Break naturally
+        // Note: Hoes don't take damage when breaking crops in vanilla
+        // (only when tilling soil), so we don't call damageToolSlightly here
+        b.breakNaturally(p.getInventory().getItemInMainHand(), true);
+        
+        // Queue replant if enabled
+        if (cfg.autoFarmReplant() && AutoFarmFeature.canReplant(cropType)) {
+            WorkItem replant = WorkItem.replantCrop(p, b, cropType);
+            queue(p).add(replant);
         }
     }
 
+    /**
+     * Handle sapling planting with particles.
+     */
     private void handlePlant(WorkItem wi, WorkQueue q) {
         Block airPos = wi.block;
+        
         if (airPos.getType().isAir()) {
             Block soil = airPos.getRelative(0, -1, 0);
-            if (cfg.treeAllowedSoils().contains(soil.getType())) {
-                if (consumeIfRequired(wi.player, wi.plantType)) {
+            if (isValidTreeSoil(soil.getType())) {
                     airPos.setType(wi.plantType, true);
-                    return;
+                
+                // Spawn green sparkle particles
+                if (cfg.treeFellerParticles()) {
+                    Location loc = airPos.getLocation().add(0.5, 0.5, 0.5);
+                    airPos.getWorld().spawnParticle(Particle.HAPPY_VILLAGER, loc, 10, 0.3, 0.3, 0.3, 0);
                 }
+                return;
             }
         }
+        
+        // Retry if not planted
         if (wi.retries > 0) {
             wi.retries--;
-            wi.cooldownTicks = Math.max(1, cfg.treeReplantRetryCooldownTicks());
+            wi.cooldownTicks = 5;
             q.add(wi);
         }
     }
 
-    private boolean consumeIfRequired(Player p, Material sapling) {
-        if (!cfg.treeReplantEnabled()) return false;
-        if (!cfg.treeReplantRequireInventory()) return true; // allow planting without strict consume
-
-        for (ItemStack stack : p.getInventory().getContents()) {
-            if (stack == null) continue;
-            if (stack.getType() == sapling && stack.getAmount() > 0) {
-                stack.setAmount(stack.getAmount() - 1);
-                return true;
+    /**
+     * Handle crop replanting.
+     */
+    private void handleReplant(WorkItem wi, WorkQueue q) {
+        Block pos = wi.block;
+        
+        if (pos.getType().isAir()) {
+            Block soil = pos.getRelative(0, -1, 0);
+            Material seedCrop = AutoFarmFeature.getCropBlock(AutoFarmFeature.getSeed(wi.plantType));
+            
+            if (seedCrop != null && isValidFarmSoil(soil.getType(), wi.plantType)) {
+                pos.setType(seedCrop, true);
+                return;
             }
         }
-        return false;
+        
+        // Retry if not planted
+        if (wi.retries > 0) {
+            wi.retries--;
+            wi.cooldownTicks = 2;
+            q.add(wi);
+        }
+    }
+
+    /**
+     * Called when all work items are processed.
+     */
+    private void finishProcessing(Player p) {
+        // Handle VeinMiner completion
+        VeinMineResult veinResult = states.endVeinMine(p);
+        if (veinResult != null && veinResult.hasData()) {
+            // Spawn XP at origin location
+            if (veinResult.getTotalXP() > 0) {
+                Location loc = veinResult.getOriginLocation();
+                if (loc != null && loc.getWorld() != null) {
+                    loc.getWorld().spawn(loc.add(0.5, 0.5, 0.5), ExperienceOrb.class, orb -> {
+                        orb.setExperience(veinResult.getTotalXP());
+                    });
+                }
+            }
+            
+            // Show actionbar summary
+            if (cfg.veinMinerShowSummary()) {
+                String msg = formatVeinMinerSummary(veinResult);
+                actionBar.showTimed(p, msg, cfg.veinMinerSummaryDuration());
+            }
+        }
+        
+        // Handle TreeFeller completion
+        LeafDropUtil.TreeFellerResult treeResult = states.endTreeFeller(p);
+        if (treeResult != null && treeResult.logs > 0) {
+            Material logType = states.getTreeFellerLogType(p);
+            Location stumpLoc = states.getTreeFellerStumpLocation(p);
+            LeafDropUtil.TreeType treeType = logType != null 
+                ? LeafDropUtil.getTreeTypeFromLog(logType) 
+                : LeafDropUtil.TreeType.OAK;
+            
+            // Drop calculated items at stump location
+            if (stumpLoc != null) {
+                for (ItemStack drop : treeResult.toItemStacks(treeType)) {
+                    stumpLoc.getWorld().dropItemNaturally(stumpLoc.add(0.5, 1, 0.5), drop);
+                }
+            }
+            
+            // Show summary
+            if (cfg.treeFellerShowSummary()) {
+                String msg = formatTreeFellerSummary(treeResult);
+                actionBar.showTimed(p, msg, cfg.veinMinerSummaryDuration());
+            }
+        }
+        
+        states.set(p, PlayerState.IDLE);
+        stopLoop(p);
+    }
+
+    /**
+     * Format VeinMiner actionbar summary with nice separators.
+     */
+    private String formatVeinMinerSummary(VeinMineResult result) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("&b⛏ ");
+        
+        List<String> parts = new ArrayList<>();
+        
+        String oreName = FortuneUtil.getOreFriendlyName(result.getOreType());
+        String dropName = FortuneUtil.getDropFriendlyName(result.getPrimaryDrop());
+        
+        // Ore count
+        parts.add("&ex" + result.getBlocksMined() + " &f" + oreName);
+        
+        // Drops with multiplier
+        if (result.getTotalDrops() > 0) {
+            String mult = result.getMultiplierString();
+            parts.add("&f" + result.getTotalDrops() + " " + dropName + " &7(" + mult + ")");
+        }
+        
+        // XP
+        if (result.getTotalXP() > 0) {
+            parts.add("&a" + result.getTotalXP() + " XP");
+        }
+        
+        sb.append(String.join(" &8• ", parts));
+        
+        return sb.toString();
+    }
+
+    /**
+     * Format TreeFeller actionbar summary.
+     * Only shows non-zero entries with nice separators.
+     */
+    private String formatTreeFellerSummary(LeafDropUtil.TreeFellerResult result) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("&a🌳 ");
+        
+        List<String> parts = new ArrayList<>();
+        
+        if (result.logs > 0) {
+            parts.add("&f" + result.logs + " &7logs");
+        }
+        if (result.saplings > 0) {
+            parts.add("&f" + result.saplings + " &7saplings");
+        }
+        if (result.apples > 0) {
+            parts.add("&f" + result.apples + " &7apples");
+        }
+        if (result.sticks > 0) {
+            parts.add("&f" + result.sticks + " &7sticks");
+        }
+        
+        sb.append(String.join(" &8• ", parts));
+        
+        return sb.toString();
+    }
+
+    /**
+     * Check if material is valid soil for trees.
+     */
+    private boolean isValidTreeSoil(Material m) {
+        return m == Material.DIRT || 
+               m == Material.GRASS_BLOCK || 
+               m == Material.PODZOL || 
+               m == Material.ROOTED_DIRT ||
+               m == Material.MOSS_BLOCK ||
+               m == Material.MUD ||
+               m == Material.MUDDY_MANGROVE_ROOTS;
+    }
+
+    /**
+     * Check if material is valid soil for farming.
+     */
+    private boolean isValidFarmSoil(Material soil, Material crop) {
+        if (crop == Material.NETHER_WART) {
+            return soil == Material.SOUL_SAND || soil == Material.SOUL_SOIL;
+        }
+        return soil == Material.FARMLAND;
+    }
+
+    /**
+     * Damage tool with proper Unbreaking enchantment handling.
+     * 
+     * Unbreaking mechanics (for tools, not armor):
+     * - Chance to consume durability = 1 / (unbreaking_level + 1)
+     * - Unbreaking I: 50% chance
+     * - Unbreaking II: 33.3% chance  
+     * - Unbreaking III: 25% chance
+     */
+    private void damageToolSlightly(Player p) {
+        ItemStack tool = p.getInventory().getItemInMainHand();
+        if (tool == null || tool.getType().isAir()) return;
+        
+        // Check if tool can be damaged
+        if (!(tool.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable dmg)) {
+            return;
+        }
+        
+        // Get Unbreaking level
+        int unbreakingLevel = tool.getEnchantmentLevel(org.bukkit.enchantments.Enchantment.UNBREAKING);
+        
+        // Calculate if durability should be consumed
+        // Formula: 1 / (unbreaking_level + 1) chance to consume
+        if (unbreakingLevel > 0) {
+            double chance = 1.0 / (unbreakingLevel + 1);
+            if (Math.random() >= chance) {
+                // Unbreaking saved the durability!
+                return;
+            }
+        }
+        
+        // Check if tool would break
+        int maxDurability = tool.getType().getMaxDurability();
+        if (dmg.getDamage() >= maxDurability - 1) {
+            // Tool is about to break - stop processing to prevent loss
+            return;
+        }
+        
+        // Apply damage
+        dmg.setDamage(dmg.getDamage() + 1);
+        tool.setItemMeta(dmg);
     }
 }
+

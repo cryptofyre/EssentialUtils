@@ -1,57 +1,36 @@
-activation:
-  holdSneakSeconds: 5     # must hold sneak to arm
-  requireToolWhileHold: true
+# EssentialUtils Configuration
+# Folia-compatible survival utilities plugin
 
-ui:
-  indicator: actionbar         # bossbar|actionbar|both
-  showProgress: true
-
-safety:
-  respectProtections: true
-  requireChunkLoaded: true
-  softFailIfInventoryFull: true
-
-performance:
-  perPlayerWorkBudgetPerTick: 60
-  hardGlobalBudgetPerTick: 500
-  idleTimeoutSeconds: 12
-
-features:
-  treeAssist:
+modules:
+  treeFeller:
     enabled: true
-    activation: [doubleSneak, holdToolAndSneak]
-    maxLogsPerTree: 160
-    maxLogsPerTick: 24       # cap per tick
-    searchRadius: 6
-    requireLeavesNearby: true
-    includeStrippedLogs: true
-    breakDelayTicks: 2          # delay between log breaks
-    durabilityPerNBlocks: 8     # damage 1 durability per N logs
-    replant:
-      enabled: false
-      requireSaplingInInventory: true
-      allowedSoils: [DIRT, GRASS_BLOCK, PODZOL, ROOTED_DIRT]
-      retryCooldownTicks: 5   # wait 5 ticks between replant retries
-      maxRetries: 10          # try 10 times before giving up
-
-  veinMine:
+    maxBlocks: 200          # Maximum logs + leaves per tree
+    replantSaplings: true   # Auto-replant sapling at stump
+    particleEffects: true   # Show green sparkle on replant
+  
+  veinMiner:
     enabled: true
-    alertOnInsufficientTier: true
-    activation: [holdToolAndSneak]
-    maxOresPerVein: 128
-    maxPerTick: 32
-    includeVariants: true
-    breakDelayBaseTicks: 1      # base delay per ore
-    breakDelayExtraPer16: 5     # +1 tick per each 16 ores in vein (smooth)
-    durabilityPerNBlocks: 10    # damage 1 per N ores
-    whitelist: ['*_ORE', 'ANCIENT_DEBRIS']
-    blacklist: [STONE, COBBLESTONE, DEEPSLATE, TUFF, GRAVEL, NETHERRACK, BUDDING_AMETHYST]
-
+    maxOres: 64             # Maximum ores per vein
+    fortuneEnabled: true    # Apply fortune enchantment multipliers
+    silkTouchDropsOre: true # Silk touch drops ore blocks instead of resources
+  
   autoFarm:
     enabled: true
-    replant: false
-    activation: [holdToolAndSneak]
-    harvestRadius: 4
-    maxCropsPerTick: 40       # cap per tick
-    cropsWhitelist: [WHEAT, CARROTS, POTATOES, BEETROOTS, NETHER_WART, SWEET_BERRY_BUSH, COCOA]
-    cropsBlacklist: [MELON, PUMPKIN, BAMBOO, SUGAR_CANE, CACTUS, KELP, SEA_PICKLE]
+    radius: 4               # Harvest radius around broken crop
+    autoReplant: true       # Replant seeds after harvest
+
+actionbar:
+  treeFeller:
+    showActiveIndicator: true
+    activeMessage: "&a⚒ Tree Feller Active"
+    showSummary: true
+    summaryFormat: "&a🌳 &f{logs} logs &7| &f{saplings} saplings &7| &f{apples} apples"
+  
+  veinMiner:
+    showSummary: true
+    summaryDuration: 40     # Ticks (2 seconds)
+    summaryFormat: "&b⛏ &ex{count} {ore} &7| &f{drops} &7({mult}) &7| &a{xp} XP"
+
+performance:
+  blocksPerTick: 32         # Max blocks processed per tick per player
+  requireChunkLoaded: true  # Only process blocks in loaded chunks

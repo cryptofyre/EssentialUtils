@@ -1,9 +1,26 @@
 name: EssentialUtils
-description: A collection of essential utilities for your Minecraft server.
-authors: [ "@PPekKunGzDev" ]
-website: https://ppekkungz.in.th
+description: Folia-compatible survival utilities - Tree Feller, Vein Miner, Auto Farm
+authors: [ "@cryptofyre", "@PPekKunGzDev" ]
+website: https://cryptofy.re
 main: net.ppekkungz.essentialUtils.EssentialUtils
 version: ${version}
 api-version: '1.21'
 folia-supported: true
 load: POSTWORLD
+
+permissions:
+  essentialutils.admin:
+    description: Allows access to EssentialUtils admin commands
+    default: op
+  essentialutils.use:
+    description: Allows using EssentialUtils features
+    default: true
+  essentialutils.treefeller:
+    description: Allows using Tree Feller
+    default: true
+  essentialutils.veinminer:
+    description: Allows using Vein Miner
+    default: true
+  essentialutils.autofarm:
+    description: Allows using Auto Farm
+    default: true

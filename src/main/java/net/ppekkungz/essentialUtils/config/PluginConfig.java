@@ -1,58 +1,124 @@
 package net.ppekkungz.essentialUtils.config;
 
-import org.bukkit.Material;
-import org.bukkit.configuration.ConfigurationSection;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.configuration.file.FileConfiguration;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
+/**
+ * Simplified configuration for EssentialUtils.
+ * Handles module settings, actionbar customization, and performance tuning.
+ */
 public class PluginConfig {
     private final FileConfiguration c;
-    public PluginConfig(FileConfiguration c) { this.c = c; }
-
-    // UI
-    public boolean showProgress() { return c.getBoolean("ui.showProgress", true); }
-    public String indicatorMode() { return c.getString("ui.indicator", "actionbar"); }
-
-    // Performance
-    public int perPlayerBudget() { return c.getInt("performance.perPlayerWorkBudgetPerTick", 60); }
-    public int idleTimeoutSeconds() { return c.getInt("performance.idleTimeoutSeconds", 12); }
-
-    // Tree
-    public boolean treeEnabled() { return c.getBoolean("features.treeAssist.enabled", true); }
-    public int treeMaxPerTick() { return c.getInt("features.treeAssist.maxLogsPerTick", 24); }
-    public int treeMaxLogs() { return c.getInt("features.treeAssist.maxLogsPerTree", 160); }
-    public int treeRadius() { return c.getInt("features.treeAssist.searchRadius", 6); }
-    public boolean treeRequireLeaves() { return c.getBoolean("features.treeAssist.requireLeavesNearby", true); }
-    public boolean treeIncludeStripped() { return c.getBoolean("features.treeAssist.includeStrippedLogs", true); }
-    public boolean treeReplantEnabled() { return c.getBoolean("features.treeAssist.replant.enabled", true); }
-    public boolean treeReplantRequireInventory() { return c.getBoolean("features.treeAssist.replant.requireSaplingInInventory", false); }
-    public int treeReplantRetryCooldownTicks() { return c.getInt("features.treeAssist.replant.retryCooldownTicks", 5); }
-    public int treeReplantMaxRetries() { return c.getInt("features.treeAssist.replant.maxRetries", 10); }
-    public Set<Material> treeAllowedSoils() {
-        List<String> raw = c.getStringList("features.treeAssist.replant.allowedSoils");
-        Set<Material> out = new HashSet<>();
-        for (String s : raw) { try { out.add(Material.valueOf(s)); } catch (Exception ignored) {} }
-        return out;
+    
+    public PluginConfig(FileConfiguration c) { 
+        this.c = c; 
     }
 
-    // Vein
-    public boolean veinEnabled() { return c.getBoolean("features.veinMine.enabled", true); }
-    public int veinMaxPerTick() { return c.getInt("features.veinMine.maxPerTick", 32); }
-    public int veinMaxOres() { return c.getInt("features.veinMine.maxOresPerVein", 128); }
-    public boolean veinIncludeVariants() { return c.getBoolean("features.veinMine.includeVariants", true); }
-    public List<String> veinWhitelist() { return c.getStringList("features.veinMine.whitelist"); }
-    public List<String> veinBlacklist() { return c.getStringList("features.veinMine.blacklist"); }
+    // ==================== MODULES ====================
+    
+    // Tree Feller
+    public boolean treeFellerEnabled() { 
+        return c.getBoolean("modules.treeFeller.enabled", true); 
+    }
+    public void setTreeFellerEnabled(boolean enabled) {
+        c.set("modules.treeFeller.enabled", enabled);
+    }
+    public int treeFellerMaxBlocks() { 
+        return c.getInt("modules.treeFeller.maxBlocks", 200); 
+    }
+    public boolean treeFellerReplant() { 
+        return c.getBoolean("modules.treeFeller.replantSaplings", true); 
+    }
+    public boolean treeFellerParticles() { 
+        return c.getBoolean("modules.treeFeller.particleEffects", true); 
+    }
 
-    // Farm
-    public boolean farmEnabled() { return c.getBoolean("features.autoFarm.enabled", true); }
-    public int farmRadius() { return c.getInt("features.autoFarm.harvestRadius", 4); }
-    public int farmMaxPerTick() { return c.getInt("features.autoFarm.maxCropsPerTick", 40); }
-    public List<String> farmWhitelist() { return c.getStringList("features.autoFarm.cropsWhitelist"); }
-    public List<String> farmBlacklist() { return c.getStringList("features.autoFarm.cropsBlacklist"); }
+    // Vein Miner
+    public boolean veinMinerEnabled() { 
+        return c.getBoolean("modules.veinMiner.enabled", true); 
+    }
+    public void setVeinMinerEnabled(boolean enabled) {
+        c.set("modules.veinMiner.enabled", enabled);
+    }
+    public int veinMinerMaxOres() { 
+        return c.getInt("modules.veinMiner.maxOres", 64); 
+    }
+    public boolean veinMinerFortuneEnabled() { 
+        return c.getBoolean("modules.veinMiner.fortuneEnabled", true); 
+    }
+    public boolean veinMinerSilkTouchDropsOre() { 
+        return c.getBoolean("modules.veinMiner.silkTouchDropsOre", true); 
+    }
 
-    // Safety
-    public boolean requireChunkLoaded() { return c.getBoolean("safety.requireChunkLoaded", true); }
+    // Auto Farm
+    public boolean autoFarmEnabled() { 
+        return c.getBoolean("modules.autoFarm.enabled", true); 
+    }
+    public void setAutoFarmEnabled(boolean enabled) {
+        c.set("modules.autoFarm.enabled", enabled);
+    }
+    public int autoFarmRadius() { 
+        return c.getInt("modules.autoFarm.radius", 4); 
+    }
+    public boolean autoFarmReplant() { 
+        return c.getBoolean("modules.autoFarm.autoReplant", true); 
+    }
+
+    // ==================== ACTIONBAR ====================
+    
+    // Tree Feller ActionBar
+    public boolean treeFellerShowIndicator() { 
+        return c.getBoolean("actionbar.treeFeller.showActiveIndicator", true); 
+    }
+    public String treeFellerActiveMessage() { 
+        return colorize(c.getString("actionbar.treeFeller.activeMessage", "&a⚒ Tree Feller Active")); 
+    }
+    public boolean treeFellerShowSummary() { 
+        return c.getBoolean("actionbar.treeFeller.showSummary", true); 
+    }
+    public String treeFellerSummaryFormat() { 
+        return colorize(c.getString("actionbar.treeFeller.summaryFormat", 
+            "&a🌳 &f{logs} logs &7| &f{saplings} saplings &7| &f{apples} apples")); 
+    }
+
+    // Vein Miner ActionBar
+    public boolean veinMinerShowSummary() { 
+        return c.getBoolean("actionbar.veinMiner.showSummary", true); 
+    }
+    public int veinMinerSummaryDuration() { 
+        return c.getInt("actionbar.veinMiner.summaryDuration", 40); 
+    }
+    public String veinMinerSummaryFormat() { 
+        return colorize(c.getString("actionbar.veinMiner.summaryFormat", 
+            "&b⛏ &ex{count} {ore} &7| &f{drops} &7({mult}) &7| &a{xp} XP")); 
+    }
+
+    // ==================== PERFORMANCE ====================
+    
+    public int blocksPerTick() { 
+        return c.getInt("performance.blocksPerTick", 32); 
+    }
+    public boolean requireChunkLoaded() { 
+        return c.getBoolean("performance.requireChunkLoaded", true); 
+    }
+
+    // ==================== UTILITIES ====================
+    
+    /**
+     * Convert & color codes to legacy format for actionbar display.
+     * Uses Adventure's legacy serializer for modern compatibility.
+     */
+    private String colorize(String text) {
+        if (text == null) return "";
+        // Convert & codes to section symbol for legacy compatibility
+        return LegacyComponentSerializer.legacyAmpersand()
+            .serialize(LegacyComponentSerializer.legacyAmpersand().deserialize(text));
+    }
+    
+    /**
+     * Get the underlying FileConfiguration for saving
+     */
+    public FileConfiguration getConfig() {
+        return c;
+    }
 }
