@@ -19,10 +19,14 @@ import java.util.List;
  */
 public class TabMenuService {
     private final EssentialUtils plugin;
-    private final PluginConfig cfg;
     
     private ScheduledTask updateTask;
     private int animationFrame = 0;
+    
+    /** Always get fresh config to support hot-reloading */
+    private PluginConfig cfg() {
+        return plugin.cfg();
+    }
     
     // Animation color gradient frames
     private static final TextColor[] GRADIENT_COLORS = {
@@ -47,11 +51,10 @@ public class TabMenuService {
     private static final TextColor STATUS_MED = TextColor.color(0xFFD700);
     private static final TextColor STATUS_BAD = TextColor.color(0xFF4500);
     
-    public TabMenuService(EssentialUtils plugin, PluginConfig cfg) {
+    public TabMenuService(EssentialUtils plugin) {
         this.plugin = plugin;
-        this.cfg = cfg;
         
-        if (cfg.tabMenuEnabled()) {
+        if (cfg().tabMenuEnabled()) {
             startUpdateLoop();
         }
     }
@@ -60,7 +63,7 @@ public class TabMenuService {
      * Start the tab menu update loop.
      */
     private void startUpdateLoop() {
-        int updateInterval = cfg.tabMenuUpdateInterval();
+        int updateInterval = cfg().tabMenuUpdateInterval();
         
         updateTask = plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(
             plugin,
@@ -85,7 +88,7 @@ public class TabMenuService {
      * Update tab menu for a specific player.
      */
     public void updatePlayer(Player player) {
-        if (!cfg.tabMenuEnabled()) return;
+        if (!cfg().tabMenuEnabled()) return;
         
         Component header = buildHeader();
         Component footer = buildFooter(player);
@@ -100,7 +103,7 @@ public class TabMenuService {
         Component header = Component.empty();
         
         // Top decoration
-        if (cfg.tabMenuShowDecorations()) {
+        if (cfg().tabMenuShowDecorations()) {
             header = header.append(Component.newline());
             header = header.append(buildDecorativeLine());
         }
@@ -111,7 +114,7 @@ public class TabMenuService {
         header = header.append(Component.newline());
         
         // Optional tagline
-        String tagline = cfg.tabMenuHeaderTagline();
+        String tagline = cfg().tabMenuHeaderTagline();
         if (!tagline.isEmpty()) {
             header = header.append(
                 Component.text(tagline, ACCENT_DARK).decorate(TextDecoration.ITALIC)
@@ -120,9 +123,9 @@ public class TabMenuService {
         }
         
         // Server IP
-        String serverIp = cfg.tabMenuServerIp();
+        String serverIp = cfg().tabMenuServerIp();
         if (!serverIp.isEmpty()) {
-            if (cfg.tabMenuShowDecorations()) {
+            if (cfg().tabMenuShowDecorations()) {
                 header = header.append(
                     Component.text("✦ ", ACCENT_GOLD)
                         .append(Component.text(serverIp, ACCENT_LIGHT).decorate(TextDecoration.BOLD))
@@ -137,7 +140,7 @@ public class TabMenuService {
         }
         
         // Bottom decoration
-        if (cfg.tabMenuShowDecorations()) {
+        if (cfg().tabMenuShowDecorations()) {
             header = header.append(buildDecorativeLine());
             header = header.append(Component.newline());
         }
@@ -149,7 +152,7 @@ public class TabMenuService {
      * Build the animated logo with flowing gradient.
      */
     private Component buildAnimatedLogo() {
-        String logoText = cfg.tabMenuLogoText();
+        String logoText = cfg().tabMenuLogoText();
         if (logoText.isEmpty()) return Component.empty();
         
         Component logo = Component.empty();
@@ -193,8 +196,8 @@ public class TabMenuService {
      * Build decorative line separator.
      */
     private Component buildDecorativeLine() {
-        String style = cfg.tabMenuDecorationStyle();
-        int length = cfg.tabMenuDecorationLength();
+        String style = cfg().tabMenuDecorationStyle();
+        int length = cfg().tabMenuDecorationLength();
         
         Component line = Component.empty();
         
@@ -214,10 +217,10 @@ public class TabMenuService {
      */
     private Component buildFooter(Player player) {
         Component footer = Component.empty();
-        boolean compact = cfg.tabMenuCompactMode();
+        boolean compact = cfg().tabMenuCompactMode();
         
         // Top decoration
-        if (cfg.tabMenuShowDecorations()) {
+        if (cfg().tabMenuShowDecorations()) {
             footer = footer.append(Component.newline());
             footer = footer.append(buildDecorativeLine());
         }
@@ -230,7 +233,7 @@ public class TabMenuService {
         }
         
         // Chunk info
-        if (cfg.chunkLoaderEnabled() && cfg.tabMenuShowChunkInfo()) {
+        if (cfg().chunkLoaderEnabled() && cfg().tabMenuShowChunkInfo()) {
             var chunkLoader = plugin.chunkLoader();
             if (chunkLoader != null) {
                 int claimed = chunkLoader.getClaimedCount(player);
@@ -245,7 +248,7 @@ public class TabMenuService {
         }
         
         // Footer tagline
-        String tagline = cfg.tabMenuFooterTagline();
+        String tagline = cfg().tabMenuFooterTagline();
         if (!tagline.isEmpty()) {
             footer = footer.append(
                 Component.text(tagline, ACCENT_DARK).decorate(TextDecoration.ITALIC)
@@ -254,7 +257,7 @@ public class TabMenuService {
         }
         
         // Bottom decoration
-        if (cfg.tabMenuShowDecorations()) {
+        if (cfg().tabMenuShowDecorations()) {
             footer = footer.append(buildDecorativeLine());
             footer = footer.append(Component.newline());
         }
@@ -269,7 +272,7 @@ public class TabMenuService {
         List<Component> parts = new ArrayList<>();
         
         // Players
-        if (cfg.tabMenuShowPlayers()) {
+        if (cfg().tabMenuShowPlayers()) {
             int online = Bukkit.getOnlinePlayers().size();
             int max = Bukkit.getMaxPlayers();
             parts.add(
@@ -280,7 +283,7 @@ public class TabMenuService {
         }
         
         // Ping
-        if (cfg.tabMenuShowPing()) {
+        if (cfg().tabMenuShowPing()) {
             int ping = player.getPing();
             TextColor pingColor = ping < 50 ? STATUS_GOOD : (ping < 150 ? STATUS_MED : STATUS_BAD);
             parts.add(
@@ -290,7 +293,7 @@ public class TabMenuService {
         }
         
         // TPS
-        if (cfg.tabMenuShowTps()) {
+        if (cfg().tabMenuShowTps()) {
             double tps = getTPS();
             TextColor tpsColor = tps >= 19.0 ? STATUS_GOOD : (tps >= 15.0 ? STATUS_MED : STATUS_BAD);
             parts.add(
@@ -300,7 +303,7 @@ public class TabMenuService {
         }
         
         // Memory
-        if (cfg.tabMenuShowMemory()) {
+        if (cfg().tabMenuShowMemory()) {
             Runtime runtime = Runtime.getRuntime();
             long usedMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
             long maxMB = runtime.maxMemory() / (1024 * 1024);
@@ -332,7 +335,7 @@ public class TabMenuService {
         Component stats = Component.empty();
         
         // Players
-        if (cfg.tabMenuShowPlayers()) {
+        if (cfg().tabMenuShowPlayers()) {
             int online = Bukkit.getOnlinePlayers().size();
             int max = Bukkit.getMaxPlayers();
             stats = stats.append(
@@ -345,7 +348,7 @@ public class TabMenuService {
         }
         
         // Ping
-        if (cfg.tabMenuShowPing()) {
+        if (cfg().tabMenuShowPing()) {
             int ping = player.getPing();
             TextColor pingColor = ping < 50 ? STATUS_GOOD : (ping < 150 ? STATUS_MED : STATUS_BAD);
             stats = stats.append(
@@ -357,7 +360,7 @@ public class TabMenuService {
         }
         
         // TPS
-        if (cfg.tabMenuShowTps()) {
+        if (cfg().tabMenuShowTps()) {
             double tps = getTPS();
             TextColor tpsColor = tps >= 19.0 ? STATUS_GOOD : (tps >= 15.0 ? STATUS_MED : STATUS_BAD);
             stats = stats.append(
@@ -369,7 +372,7 @@ public class TabMenuService {
         }
         
         // Memory
-        if (cfg.tabMenuShowMemory()) {
+        if (cfg().tabMenuShowMemory()) {
             Runtime runtime = Runtime.getRuntime();
             long usedMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
             long maxMB = runtime.maxMemory() / (1024 * 1024);
@@ -403,7 +406,7 @@ public class TabMenuService {
      * Called when a player joins.
      */
     public void onPlayerJoin(Player player) {
-        if (cfg.tabMenuEnabled()) {
+        if (cfg().tabMenuEnabled()) {
             player.getScheduler().runDelayed(plugin, task -> {
                 updatePlayer(player);
             }, null, 5L);

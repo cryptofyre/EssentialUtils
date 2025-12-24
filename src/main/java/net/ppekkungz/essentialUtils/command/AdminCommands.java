@@ -230,9 +230,22 @@ public class AdminCommands {
 
     private int reloadConfig(CommandContext<CommandSourceStack> context) {
         CommandSender sender = context.getSource().getSender();
+        
+        // Reload config from disk
         plugin.reloadConfig();
         plugin.loadPluginConfig();
+        
+        // Show loaded values for verification
+        PluginConfig cfg = plugin.cfg();
         sender.sendMessage("§a[EssentialUtils] §fConfiguration reloaded!");
+        sender.sendMessage("");
+        sender.sendMessage("§7Tab Menu Config (loaded values):");
+        sender.sendMessage("  §7Logo: §f" + cfg.tabMenuLogoText());
+        sender.sendMessage("  §7Server IP: §f" + cfg.tabMenuServerIp());
+        sender.sendMessage("  §7Decorations: §f" + cfg.tabMenuShowDecorations());
+        sender.sendMessage("  §7Decoration Length: §f" + cfg.tabMenuDecorationLength());
+        sender.sendMessage("  §7Compact Mode: §f" + cfg.tabMenuCompactMode());
+        
         return Command.SINGLE_SUCCESS;
     }
 

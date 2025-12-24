@@ -33,8 +33,11 @@ public final class EssentialUtils extends JavaPlugin {
     public void onEnable() {
         instance = this;
         
-        // Save default config if not exists
+        // Load config with defaults
         saveDefaultConfig();
+        getConfig().options().copyDefaults(true);
+        saveConfig();
+        reloadConfig();
         loadPluginConfig();
 
         // Initialize services
@@ -44,7 +47,7 @@ public final class EssentialUtils extends JavaPlugin {
         
         // Initialize new features
         chunkLoader = new ChunkLoaderFeature(this, cfg);
-        tabMenu = new TabMenuService(this, cfg);
+        tabMenu = new TabMenuService(this);
 
         // Register event listener
         getServer().getPluginManager().registerEvents(
