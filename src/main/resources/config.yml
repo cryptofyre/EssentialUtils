@@ -1,6 +1,9 @@
 # EssentialUtils Configuration
 # Folia-compatible survival utilities plugin
 
+# Config version - DO NOT EDIT (used for automatic migration)
+config-version: 1
+
 modules:
   treeFeller:
     enabled: true
@@ -50,8 +53,8 @@ tabMenu:
   
   # Header settings
   header:
-    logoText: "Cider Collective"  # Your server/network name (animated gradient)
-    serverIp: "nano.mc.cider.sh"
+    logoText: "Server Name"  # Your server/network name (animated gradient)
+    serverIp: "your.server.ip"
     tagline: ""                   # Optional tagline below logo (leave empty to hide)
     showDecorations: true         # Show decorative lines and icons
     decorationStyle: "═"          # Character for decorative lines
