@@ -4,7 +4,11 @@ plugins {
 }
 
 group = 'org.cryptofyre'
-version = '1.0.0'
+
+// Base version - update this for major/minor/patch releases
+def baseVersion = '1.0.0'
+// CI injects BUILD_VERSION, local builds use baseVersion-dev
+version = System.getenv('BUILD_VERSION') ?: "${baseVersion}-dev"
 
 repositories {
     mavenCentral()

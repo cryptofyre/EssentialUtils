@@ -8,6 +8,7 @@ import org.cryptofyre.essentialUtils.indicator.ActionBarService;
 import org.cryptofyre.essentialUtils.indicator.TabMenuService;
 import org.cryptofyre.essentialUtils.listener.ActivationListener;
 import org.cryptofyre.essentialUtils.state.StateManager;
+import org.cryptofyre.essentialUtils.updater.UpdateChecker;
 import org.cryptofyre.essentialUtils.work.WorkService;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -29,6 +30,7 @@ public final class EssentialUtils extends JavaPlugin {
     private ActionBarService actionBar;
     private ChunkLoaderFeature chunkLoader;
     private TabMenuService tabMenu;
+    private UpdateChecker updateChecker;
 
     @Override
     public void onEnable() {
@@ -61,6 +63,19 @@ public final class EssentialUtils extends JavaPlugin {
 
         // Register commands using Brigadier
         new AdminCommands(this).register();
+
+        // Initialize update checker
+        updateChecker = new UpdateChecker(
+            this,
+            cfg.updaterGithubOwner(),
+            cfg.updaterGithubRepo(),
+            cfg.updaterEnabled(),
+            cfg.updaterCheckOnStartup(),
+            cfg.updaterNotifyAdmins(),
+            cfg.updaterAutoDownload(),
+            cfg.updaterDownloadPath()
+        );
+        updateChecker.runStartupCheck();
 
         getLogger().info("EssentialUtils enabled (Folia-compatible)");
         getLogger().info("  Tree Feller: " + (cfg.treeFellerEnabled() ? "Enabled" : "Disabled"));
@@ -115,5 +130,9 @@ public final class EssentialUtils extends JavaPlugin {
     
     public TabMenuService tabMenu() { 
         return tabMenu; 
+    }
+    
+    public UpdateChecker updateChecker() { 
+        return updateChecker; 
     }
 }

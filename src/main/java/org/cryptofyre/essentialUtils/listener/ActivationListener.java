@@ -90,6 +90,14 @@ public class ActivationListener implements Listener {
         if (tabMenu != null) {
             tabMenu.onPlayerJoin(p);
         }
+        
+        // Notify admins about available updates
+        if (plugin.updateChecker() != null) {
+            // Small delay to ensure player is fully joined
+            p.getScheduler().runDelayed(plugin, task -> {
+                plugin.updateChecker().notifyPlayer(p);
+            }, null, 40L); // 2 second delay
+        }
     }
 
     // ==================== SNEAK HANDLING (Tree Feller Indicator) ====================

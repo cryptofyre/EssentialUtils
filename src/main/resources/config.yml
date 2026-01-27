@@ -73,3 +73,14 @@ tabMenu:
 performance:
   blocksPerTick: 32         # Max blocks processed per tick per player
   requireChunkLoaded: true  # Only process blocks in loaded chunks
+
+# Auto-updater configuration
+updater:
+  enabled: true               # Enable update checking
+  checkOnStartup: true        # Check for updates when server starts
+  notifyAdmins: true          # Notify ops when they join if update available
+  autoDownload: false         # Auto-download updates (requires restart to apply)
+  downloadPath: "update"      # Folder inside plugins/ to download updates to
+  github:
+    owner: "cryptofyre"       # GitHub repository owner
+    repo: "EssentialUtils-Mod"  # GitHub repository name

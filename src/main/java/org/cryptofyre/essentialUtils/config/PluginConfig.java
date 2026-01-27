@@ -187,6 +187,30 @@ public class PluginConfig {
         return c.getBoolean("performance.requireChunkLoaded", true); 
     }
 
+    // ==================== UPDATER ====================
+    
+    public boolean updaterEnabled() { 
+        return c.getBoolean("updater.enabled", true); 
+    }
+    public boolean updaterCheckOnStartup() { 
+        return c.getBoolean("updater.checkOnStartup", true); 
+    }
+    public boolean updaterNotifyAdmins() { 
+        return c.getBoolean("updater.notifyAdmins", true); 
+    }
+    public boolean updaterAutoDownload() { 
+        return c.getBoolean("updater.autoDownload", false); 
+    }
+    public String updaterDownloadPath() { 
+        return c.getString("updater.downloadPath", "update"); 
+    }
+    public String updaterGithubOwner() { 
+        return c.getString("updater.github.owner", "cryptofyre"); 
+    }
+    public String updaterGithubRepo() { 
+        return c.getString("updater.github.repo", "EssentialUtils-Mod"); 
+    }
+
     // ==================== UTILITIES ====================
     
     /**
