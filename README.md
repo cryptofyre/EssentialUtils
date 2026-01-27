@@ -189,4 +189,4 @@ This plugin is fully compatible with Folia's regionized multithreading:
 
 ## License
 
-MIT © 2025 cryptofyre & ppekkungz
+MIT © 2025 cryptofyre
