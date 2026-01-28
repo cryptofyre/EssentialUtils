@@ -1,6 +1,7 @@
 package org.cryptofyre.essentialUtils.command;
 
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -13,12 +14,13 @@ import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.cryptofyre.essentialUtils.EssentialUtils;
 import org.cryptofyre.essentialUtils.config.PluginConfig;
 import org.cryptofyre.essentialUtils.features.chunkloader.ChunkLoaderFeature;
+import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -92,7 +94,34 @@ public class AdminCommands {
                 .requires(source -> source.getSender().hasPermission("essentialutils.admin"))
                 .then(Commands.argument("module", StringArgumentType.word())
                     .suggests(this::suggestModules)
-                    .executes(this::disableModule)));
+                    .executes(this::disableModule)))
+            
+            // /eutils chunks - Admin chunk management
+            .then(Commands.literal("chunks")
+                .requires(source -> source.getSender().hasPermission("essentialutils.admin"))
+                // /eutils chunks list [player]
+                .then(Commands.literal("list")
+                    .executes(this::listAllChunks)
+                    .then(Commands.argument("player", StringArgumentType.word())
+                        .suggests(this::suggestOnlinePlayers)
+                        .executes(this::listPlayerChunks)))
+                // /eutils chunks unclaim <world> <x> <z>
+                .then(Commands.literal("unclaim")
+                    .then(Commands.argument("world", StringArgumentType.word())
+                        .suggests(this::suggestWorlds)
+                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                            .then(Commands.argument("z", IntegerArgumentType.integer())
+                                .executes(this::adminUnclaimChunk)))))
+                // /eutils chunks stats
+                .then(Commands.literal("stats")
+                    .executes(this::showChunkStats)))
+            
+            // /eutils update - Check for updates
+            .then(Commands.literal("update")
+                .requires(source -> source.getSender().hasPermission("essentialutils.admin"))
+                .executes(this::checkUpdate)
+                .then(Commands.literal("download")
+                    .executes(this::downloadUpdate)));
     }
 
     /**
@@ -135,19 +164,53 @@ public class AdminCommands {
             .forEach(builder::suggest);
         return builder.buildFuture();
     }
+    
+    /**
+     * Suggest online player names for tab completion.
+     */
+    private CompletableFuture<Suggestions> suggestOnlinePlayers(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        String input = builder.getRemaining().toLowerCase();
+        Bukkit.getOnlinePlayers().stream()
+            .map(Player::getName)
+            .filter(name -> name.toLowerCase().startsWith(input))
+            .forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+    
+    /**
+     * Suggest world names for tab completion.
+     */
+    private CompletableFuture<Suggestions> suggestWorlds(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        String input = builder.getRemaining().toLowerCase();
+        Bukkit.getWorlds().stream()
+            .map(w -> w.getName())
+            .filter(name -> name.toLowerCase().startsWith(input))
+            .forEach(builder::suggest);
+        return builder.buildFuture();
+    }
 
     private int showHelp(CommandContext<CommandSourceStack> context) {
         CommandSender sender = context.getSource().getSender();
-        sender.sendMessage("§6§l[EssentialUtils] §fCommands:");
+        String version = plugin.getPluginMeta().getVersion();
+        
+        sender.sendMessage("§6§l━━━ EssentialUtils v" + version + " ━━━");
+        sender.sendMessage("§7Folia-compatible survival utilities");
         sender.sendMessage("");
-        sender.sendMessage("  §e/eutils enable <module> §7- Enable a module");
-        sender.sendMessage("  §e/eutils disable <module> §7- Disable a module");
-        sender.sendMessage("  §e/eutils status §7- View module status");
-        sender.sendMessage("  §e/eutils reload §7- Reload configuration");
+        sender.sendMessage("§e/eutils enable <module> §7- Enable a module");
+        sender.sendMessage("§e/eutils disable <module> §7- Disable a module");
+        sender.sendMessage("§e/eutils status §7- View module status");
+        sender.sendMessage("§e/eutils reload §7- Reload configuration");
         sender.sendMessage("");
-        sender.sendMessage("  §e/chunk claim §7- Claim current chunk");
-        sender.sendMessage("  §e/chunk unclaim §7- Unclaim current chunk");
-        sender.sendMessage("  §e/chunk list §7- List your claimed chunks");
+        sender.sendMessage("§6Admin Commands:");
+        sender.sendMessage("§e/eutils chunks list [player] §7- List claimed chunks");
+        sender.sendMessage("§e/eutils chunks unclaim <world> <x> <z> §7- Force unclaim");
+        sender.sendMessage("§e/eutils chunks stats §7- View chunk statistics");
+        sender.sendMessage("§e/eutils update §7- Check for updates");
+        sender.sendMessage("");
+        sender.sendMessage("§6Player Commands:");
+        sender.sendMessage("§e/chunk claim §7- Claim current chunk");
+        sender.sendMessage("§e/chunk unclaim §7- Unclaim current chunk");
+        sender.sendMessage("§e/chunk list §7- List your claimed chunks");
         sender.sendMessage("");
         sender.sendMessage("§7Modules: treefeller, veinminer, autofarm, chunkloader, tabmenu");
         return Command.SINGLE_SUCCESS;
@@ -324,6 +387,246 @@ public class AdminCommands {
         }
         
         plugin.saveConfig();
+        return Command.SINGLE_SUCCESS;
+    }
+
+    // ==================== ADMIN CHUNK COMMANDS ====================
+    
+    private int listAllChunks(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        var chunkLoader = plugin.chunkLoader();
+        
+        if (chunkLoader == null || !plugin.cfg().chunkLoaderEnabled()) {
+            sender.sendMessage("§c[EssentialUtils] §fChunk Loader is disabled.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        var allChunks = chunkLoader.getAllPlayerChunks();
+        
+        if (allChunks.isEmpty()) {
+            sender.sendMessage("§6[Chunk Admin] §fNo chunks are currently claimed.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        sender.sendMessage("§6§l━━━ All Claimed Chunks ━━━");
+        int totalChunks = 0;
+        
+        for (Map.Entry<UUID, Set<ChunkLoaderFeature.ChunkKey>> entry : allChunks.entrySet()) {
+            UUID playerId = entry.getKey();
+            Set<ChunkLoaderFeature.ChunkKey> chunks = entry.getValue();
+            
+            OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerId);
+            String playerName = offlinePlayer.getName() != null ? offlinePlayer.getName() : playerId.toString();
+            
+            sender.sendMessage("");
+            sender.sendMessage("§e" + playerName + " §7(" + chunks.size() + " chunks):");
+            for (var key : chunks) {
+                sender.sendMessage("  §7- §f" + key.worldName() + " §7@ §f" + key.x() + ", " + key.z());
+            }
+            totalChunks += chunks.size();
+        }
+        
+        sender.sendMessage("");
+        sender.sendMessage("§7Total: §f" + totalChunks + " §7chunks by §f" + allChunks.size() + " §7players");
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    private int listPlayerChunks(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        String playerName = StringArgumentType.getString(context, "player");
+        var chunkLoader = plugin.chunkLoader();
+        
+        if (chunkLoader == null || !plugin.cfg().chunkLoaderEnabled()) {
+            sender.sendMessage("§c[EssentialUtils] §fChunk Loader is disabled.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        // Find player by name
+        OfflinePlayer target = Bukkit.getOfflinePlayerIfCached(playerName);
+        if (target == null) {
+            // Try online players
+            Player onlineTarget = Bukkit.getPlayer(playerName);
+            if (onlineTarget != null) {
+                target = onlineTarget;
+            } else {
+                sender.sendMessage("§c[Chunk Admin] §fPlayer not found: §e" + playerName);
+                return Command.SINGLE_SUCCESS;
+            }
+        }
+        
+        var chunks = chunkLoader.getPlayerChunks(target.getUniqueId());
+        String displayName = target.getName() != null ? target.getName() : target.getUniqueId().toString();
+        
+        sender.sendMessage("§6[Chunk Admin] §fChunks claimed by §e" + displayName + "§f:");
+        
+        if (chunks.isEmpty()) {
+            sender.sendMessage("  §7No chunks claimed.");
+        } else {
+            int i = 1;
+            for (var key : chunks) {
+                sender.sendMessage("  §7" + i + ". §f" + key.worldName() + " §7@ §f" + key.x() + ", " + key.z());
+                i++;
+            }
+        }
+        
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    private int adminUnclaimChunk(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        String worldName = StringArgumentType.getString(context, "world");
+        int x = IntegerArgumentType.getInteger(context, "x");
+        int z = IntegerArgumentType.getInteger(context, "z");
+        
+        var chunkLoader = plugin.chunkLoader();
+        
+        if (chunkLoader == null || !plugin.cfg().chunkLoaderEnabled()) {
+            sender.sendMessage("§c[EssentialUtils] §fChunk Loader is disabled.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        ChunkLoaderFeature.ChunkKey key = new ChunkLoaderFeature.ChunkKey(worldName, x, z);
+        
+        // Find who owns this chunk
+        UUID ownerId = chunkLoader.getChunkOwner(key);
+        if (ownerId == null) {
+            sender.sendMessage("§c[Chunk Admin] §fThis chunk is not claimed.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerId);
+        String ownerName = owner.getName() != null ? owner.getName() : ownerId.toString();
+        
+        boolean success = chunkLoader.adminUnclaimChunk(key);
+        
+        if (success) {
+            sender.sendMessage("§a[Chunk Admin] §fUnclaimed chunk §e" + worldName + " " + x + ", " + z);
+            sender.sendMessage("§7Previous owner: §f" + ownerName);
+        } else {
+            sender.sendMessage("§c[Chunk Admin] §fFailed to unclaim chunk.");
+        }
+        
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    private int showChunkStats(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        var chunkLoader = plugin.chunkLoader();
+        
+        if (chunkLoader == null || !plugin.cfg().chunkLoaderEnabled()) {
+            sender.sendMessage("§c[EssentialUtils] §fChunk Loader is disabled.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        var allChunks = chunkLoader.getAllPlayerChunks();
+        int totalChunks = chunkLoader.getTotalLoadedChunks();
+        int maxPerPlayer = chunkLoader.getMaxChunks();
+        
+        // Calculate per-world stats
+        Map<String, Integer> worldCounts = new HashMap<>();
+        Map<UUID, Integer> playerCounts = new HashMap<>();
+        
+        for (Map.Entry<UUID, Set<ChunkLoaderFeature.ChunkKey>> entry : allChunks.entrySet()) {
+            playerCounts.put(entry.getKey(), entry.getValue().size());
+            for (var key : entry.getValue()) {
+                worldCounts.merge(key.worldName(), 1, Integer::sum);
+            }
+        }
+        
+        sender.sendMessage("§6§l━━━ Chunk Loader Statistics ━━━");
+        sender.sendMessage("");
+        sender.sendMessage("§7Total loaded chunks: §f" + totalChunks);
+        sender.sendMessage("§7Total players with claims: §f" + allChunks.size());
+        sender.sendMessage("§7Max chunks per player: §f" + maxPerPlayer);
+        
+        if (!worldCounts.isEmpty()) {
+            sender.sendMessage("");
+            sender.sendMessage("§6Per-World Breakdown:");
+            worldCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .forEach(e -> sender.sendMessage("  §7" + e.getKey() + ": §f" + e.getValue() + " chunks"));
+        }
+        
+        if (!playerCounts.isEmpty()) {
+            sender.sendMessage("");
+            sender.sendMessage("§6Top Players by Chunk Count:");
+            playerCounts.entrySet().stream()
+                .sorted(Map.Entry.<UUID, Integer>comparingByValue().reversed())
+                .limit(5)
+                .forEach(e -> {
+                    OfflinePlayer p = Bukkit.getOfflinePlayer(e.getKey());
+                    String name = p.getName() != null ? p.getName() : e.getKey().toString();
+                    sender.sendMessage("  §7" + name + ": §f" + e.getValue() + " chunks");
+                });
+        }
+        
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    // ==================== UPDATE COMMANDS ====================
+    
+    private int checkUpdate(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        var updateChecker = plugin.updateChecker();
+        
+        if (updateChecker == null) {
+            sender.sendMessage("§c[EssentialUtils] §fUpdate checker is not available.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        String currentVersion = plugin.getPluginMeta().getVersion();
+        sender.sendMessage("§6[EssentialUtils] §fChecking for updates...");
+        sender.sendMessage("§7Current version: §f" + currentVersion);
+        
+        updateChecker.checkForUpdates().thenAccept(hasUpdate -> {
+            // Schedule message back on main thread (Folia-compatible)
+            Bukkit.getGlobalRegionScheduler().execute(plugin, () -> {
+                if (hasUpdate) {
+                    String latestVersion = updateChecker.getLatestVersion();
+                    sender.sendMessage("");
+                    sender.sendMessage("§a[EssentialUtils] §fUpdate available!");
+                    sender.sendMessage("§7Latest version: §a" + latestVersion);
+                    sender.sendMessage("");
+                    sender.sendMessage("§7Use §e/eutils update download §7to download.");
+                } else {
+                    sender.sendMessage("§a[EssentialUtils] §fYou are running the latest version!");
+                }
+            });
+        });
+        
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    private int downloadUpdate(CommandContext<CommandSourceStack> context) {
+        CommandSender sender = context.getSource().getSender();
+        var updateChecker = plugin.updateChecker();
+        
+        if (updateChecker == null) {
+            sender.sendMessage("§c[EssentialUtils] §fUpdate checker is not available.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        if (!updateChecker.isUpdateAvailable()) {
+            sender.sendMessage("§e[EssentialUtils] §fNo update available. Run §e/eutils update §ffirst.");
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        sender.sendMessage("§6[EssentialUtils] §fDownloading update...");
+        
+        updateChecker.downloadUpdate().thenAccept(path -> {
+            Bukkit.getGlobalRegionScheduler().execute(plugin, () -> {
+                if (path != null) {
+                    sender.sendMessage("");
+                    sender.sendMessage("§a[EssentialUtils] §fDownload complete!");
+                    sender.sendMessage("§7File: §f" + path.toString());
+                    sender.sendMessage("");
+                    sender.sendMessage("§eRestart the server once to apply the update.");
+                } else {
+                    sender.sendMessage("§c[EssentialUtils] §fDownload failed. Check console for details.");
+                }
+            });
+        });
+        
         return Command.SINGLE_SUCCESS;
     }
 

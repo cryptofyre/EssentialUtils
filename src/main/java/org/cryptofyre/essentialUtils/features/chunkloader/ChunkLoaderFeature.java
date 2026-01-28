@@ -161,6 +161,54 @@ public class ChunkLoaderFeature {
     }
     
     /**
+     * Get all player chunks map (for admin listing).
+     * Returns an unmodifiable view.
+     */
+    public Map<UUID, Set<ChunkKey>> getAllPlayerChunks() {
+        return Collections.unmodifiableMap(playerChunks);
+    }
+    
+    /**
+     * Get the owner UUID of a chunk, if any.
+     */
+    public UUID getChunkOwner(ChunkKey key) {
+        for (Map.Entry<UUID, Set<ChunkKey>> entry : playerChunks.entrySet()) {
+            if (entry.getValue().contains(key)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Admin unclaim - removes a chunk from any player's claims (bypasses ownership check).
+     * Returns true if the chunk was claimed and is now unclaimed.
+     */
+    public boolean adminUnclaimChunk(ChunkKey key) {
+        UUID owner = getChunkOwner(key);
+        if (owner == null) {
+            return false; // Not claimed by anyone
+        }
+        
+        Set<ChunkKey> owned = playerChunks.get(owner);
+        if (owned != null) {
+            owned.remove(key);
+            if (owned.isEmpty()) {
+                playerChunks.remove(owner);
+            }
+        }
+        loadedChunks.remove(key);
+        
+        // Remove chunk ticket
+        removeChunkTicket(key);
+        
+        // Save to config
+        saveChunkClaims();
+        
+        return true;
+    }
+    
+    /**
      * Add a plugin chunk ticket to keep the chunk loaded.
      * Folia-compatible - uses region scheduler for chunk operations.
      */
