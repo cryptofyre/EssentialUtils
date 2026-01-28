@@ -2,7 +2,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Gradle](https://img.shields.io/badge/Gradle-Build-brightgreen)
-![PaperMC](https://img.shields.io/badge/PaperMC-1.21.8-blue)
+![PaperMC](https://img.shields.io/badge/PaperMC-1.21.8+-blue)
 ![Folia](https://img.shields.io/badge/Folia-Supported-success)
 
 > A **Folia-optimized survival utilities plugin** for Paper/Folia 1.21.8+.  
