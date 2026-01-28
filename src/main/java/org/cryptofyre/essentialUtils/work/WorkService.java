@@ -10,6 +10,7 @@ import org.cryptofyre.essentialUtils.state.StateManager;
 import org.cryptofyre.essentialUtils.util.FortuneUtil;
 import org.cryptofyre.essentialUtils.util.LeafDropUtil;
 import org.cryptofyre.essentialUtils.util.Protection;
+import org.bukkit.Effect;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
@@ -166,8 +167,9 @@ public class WorkService {
                 result.addLeafDrops(treeType);
             }
             
-            // Break the leaf silently (drops calculated above)
+            // Play break effect (sound + particles) then remove block
             // Note: Leaves don't damage axes in vanilla Minecraft
+            playBlockBreakEffect(b);
             b.setType(Material.AIR);
         } else {
             // Log - break naturally and damage tool
@@ -193,6 +195,9 @@ public class WorkService {
         
         boolean silkTouch = FortuneUtil.hasSilkTouch(tool);
         int fortuneLevel = FortuneUtil.getFortuneLevel(tool);
+        
+        // Play break effect (sound + particles) before removing the block
+        playBlockBreakEffect(b);
         
         if (silkTouch && cfg.veinMinerSilkTouchDropsOre()) {
             // Silk Touch: drop the ore block itself
@@ -337,8 +342,9 @@ public class WorkService {
             
             // Drop calculated items at stump location
             if (stumpLoc != null) {
+                Location dropLoc = stumpLoc.clone().add(0.5, 1, 0.5);
                 for (ItemStack drop : treeResult.toItemStacks(treeType)) {
-                    stumpLoc.getWorld().dropItemNaturally(stumpLoc.add(0.5, 1, 0.5), drop);
+                    stumpLoc.getWorld().dropItemNaturally(dropLoc, drop);
                 }
             }
             
@@ -433,6 +439,14 @@ public class WorkService {
             return soil == Material.SOUL_SAND || soil == Material.SOUL_SOIL;
         }
         return soil == Material.FARMLAND;
+    }
+
+    /**
+     * Play block break effect (sound and particles) for the given block.
+     * This should be called before setType(Material.AIR) to get the correct effect.
+     */
+    private void playBlockBreakEffect(Block b) {
+        b.getWorld().playEffect(b.getLocation(), Effect.STEP_SOUND, b.getType());
     }
 
     /**
