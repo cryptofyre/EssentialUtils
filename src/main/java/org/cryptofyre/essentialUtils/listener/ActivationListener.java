@@ -128,8 +128,15 @@ public class ActivationListener implements Listener {
         Block b = e.getBlock();
         ItemStack hand = p.getInventory().getItemInMainHand();
         
-        // Skip if player is already processing
+        // Check if player is already processing
         if (states.isActive(p)) {
+            // Allow Tree Feller to queue additional trees while processing
+            // This fixes the race condition when breaking multiple trees quickly
+            if (cfg.treeFellerEnabled() && p.isSneaking() && isAxe(hand) && tree.canTrigger(p, b)) {
+                handleTreeFellerQueue(p, b, e);
+                return;
+            }
+            // Block other features while processing
             return;
         }
 
@@ -188,18 +195,7 @@ public class ActivationListener implements Listener {
         states.set(p, PlayerState.ACTIVE);
         
         // Queue all blocks
-        int idx = 0;
-        for (Block tb : targets) {
-            boolean isLeaf = tb.getType().name().endsWith("_LEAVES");
-            int delay = idx; // Simple stagger
-            
-            if (isLeaf) {
-                work.queue(p).add(WorkItem.breakLeaf(p, tb, delay));
-            } else {
-                work.queue(p).add(WorkItem.breakLog(p, tb, delay));
-            }
-            idx++;
-        }
+        queueTreeBlocks(p, targets);
         
         // Queue sapling replant if enabled
         // Plant at stump position (where the bottom log was, now will be air)
@@ -216,6 +212,61 @@ public class ActivationListener implements Listener {
         // Clear persistent indicator and start work loop
         actionBar.clearPersistent(p);
         work.ensureLoop(p);
+    }
+
+    /**
+     * Handle queuing additional tree blocks when already processing.
+     * This is called when the player breaks a second tree while the first is still being processed.
+     * Does not reinitialize tracking - just adds more blocks to the work queue.
+     */
+    private void handleTreeFellerQueue(Player p, Block origin, BlockBreakEvent e) {
+        Set<Block> targets = tree.collectTargets(p, origin);
+        
+        if (targets.isEmpty()) {
+            return; // Let normal break happen
+        }
+        
+        // Cancel the original break event - we'll handle it
+        e.setCancelled(true);
+        
+        // Find stump for replanting
+        Block stump = findStump(targets);
+        Material logType = origin.getType();
+        
+        // Queue all blocks (don't reinitialize tracking, just add to existing queue)
+        queueTreeBlocks(p, targets);
+        
+        // Queue sapling replant if enabled
+        if (cfg.treeFellerReplant() && stump != null) {
+            Material sapling = TreeAssistFeature.saplingForLog(logType);
+            Block plantPos = stump;
+            
+            // Delay replant to after tree is broken
+            p.getScheduler().runDelayed(plugin, task -> {
+                work.queue(p).add(WorkItem.plantSapling(p, plantPos, sapling, 10));
+            }, null, 20L);
+        }
+        
+        // Work loop is already running, just ensure it's active
+        work.ensureLoop(p);
+    }
+
+    /**
+     * Queue tree blocks (logs and leaves) for processing.
+     */
+    private void queueTreeBlocks(Player p, Set<Block> targets) {
+        int idx = 0;
+        for (Block tb : targets) {
+            boolean isLeaf = tb.getType().name().endsWith("_LEAVES");
+            int delay = idx; // Simple stagger
+            
+            if (isLeaf) {
+                work.queue(p).add(WorkItem.breakLeaf(p, tb, delay));
+            } else {
+                work.queue(p).add(WorkItem.breakLog(p, tb, delay));
+            }
+            idx++;
+        }
     }
 
     /**

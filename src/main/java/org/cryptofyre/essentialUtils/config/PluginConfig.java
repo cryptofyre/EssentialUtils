@@ -208,7 +208,7 @@ public class PluginConfig {
         return c.getString("updater.github.owner", "cryptofyre"); 
     }
     public String updaterGithubRepo() { 
-        return c.getString("updater.github.repo", "EssentialUtils-Mod"); 
+        return c.getString("updater.github.repo", "EssentialUtils"); 
     }
 
     // ==================== UTILITIES ====================

@@ -83,4 +83,4 @@ updater:
   downloadPath: "update"      # Folder inside plugins/ to download updates to
   github:
     owner: "cryptofyre"       # GitHub repository owner
-    repo: "EssentialUtils-Mod"  # GitHub repository name
+    repo: "EssentialUtils"  # GitHub repository name
